@@ -38,7 +38,7 @@ int main(int argc, char *argv[]){
     }
 
     struct sockaddr_storage their_addr;
-    socklen_t addr_size;
+    socklen_t addr_size = sizeof(their_addr);
     int accept_sockfd;
     int listen_sockfd = get_socket_and_listen(argv[1]);
     if((accept_sockfd = accept(listen_sockfd, (struct sockaddr *)&their_addr, &addr_size)) < 0){
