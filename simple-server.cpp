@@ -36,10 +36,18 @@ int main(int argc, char *argv[]){
         cout << "Usage: " << argv[0] << " PORT_NUMBER DIRECTORY" << endl;
         exit(1);
     }
-    int listen_sockfd = get_socket_and_listen(argv[1]);
-    cout << "Now listening" << endl;
-    close(listen_sockfd);
 
+    struct sockaddr_storage their_addr;
+    socklen_t addr_size;
+    int accept_sockfd;
+    int listen_sockfd = get_socket_and_listen(argv[1]);
+    if((accept_sockfd = accept(listen_sockfd, (struct sockaddr *)&their_addr, &addr_size)) < 0){
+        perror("Failed to accept incoming connection");
+        close(listen_sockfd);
+        exit(1);
+    }
+    close(listen_sockfd);
+    close(accept_sockfd);
     return 0;
 
 }
@@ -87,5 +95,6 @@ int get_socket_and_listen(const char *port_number){
         exit(1);
     }
     
+    cout << "Listening at port " << port_number << endl;
     return listen_sockfd;
 }
