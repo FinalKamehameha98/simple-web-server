@@ -1,5 +1,5 @@
 CPP=g++
-CPPFLAGS=-Wall -Wextra -O1 -g -std=c++17 -pthread
+CPPFLAGS=-Wall -Wextra -Werror -O1 -g -std=c++17 -pthread
 
 TARGETS=simple-server
 
