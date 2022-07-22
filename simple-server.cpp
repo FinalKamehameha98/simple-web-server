@@ -18,6 +18,9 @@
 #include <stdexcept>
 #include <unistd.h>
 #include <regex>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 // using declarations
 using std::cout;
@@ -33,6 +36,8 @@ int get_socket_and_listen(const char *port_number);
 void handle_client(int accept_sockfd);
 int accept_connection(int listen_sockfd);
 bool is_valid_get_request(string request_msg);
+string get_400_response();
+string get_404_response();
 
 /**
  * 
@@ -155,16 +160,19 @@ void handle_client(int accept_sockfd){
 
     // Convert request message frm char array to C++ string
     string request_msg(request_buf, bytes_recv);
-    cout << request_msg << "\n";
-
+    //cout << request_msg << "\n";
+    
+    string response_msg;
     if(!is_valid_get_request(request_msg)){
-        cout << "HTTP request NOT valid" << endl;
-        //send_400_response(accept_sockfd);
+        //cout << "HTTP request NOT valid" << endl;
+        response_msg = get_400_response();
     }
     else{
         cout << "HTTP request IS valid" << endl;
-        //if(!in_filesystem()){
-        //    send_404_response(accept_sockfd);
+        response_msg = get_400_response();
+        //get_path(request_msg);
+        //if(!fs::exists(path)){
+        //    response_msg = get_404_response();
         //}
         //else{
         //    if(is_file()){
@@ -175,7 +183,22 @@ void handle_client(int accept_sockfd){
         //    }
         //}
     }
+    
 
+    int bytes_sent = 0;
+    int msg_size = response_msg.length();
+    const char *response_msg_buf = response_msg.c_str();
+
+    while(msg_size > 0){
+        if((bytes_sent = send(accept_sockfd, response_msg_buf, msg_size, 0)) < 0){
+            perror("Failed to send message");
+            close(accept_sockfd);
+            exit(1);
+        }
+        response_msg_buf += bytes_sent;
+        msg_size -= bytes_sent;
+        
+    }
 }
 
 /**
@@ -199,11 +222,22 @@ void handle_client(int accept_sockfd){
  * @param request_str The HTTP GET request message that needs to be verified 
  * @return If HTTP GET request message is valid, true.  Otherwise, false.
  */
-
 bool is_valid_get_request(string request_str){
     std::smatch request_match;
     std::regex request_regex("GET\\s+/([a-zA-Z0-9_\\-\\.]+/?)*\\s+HTTP/[0-9]\\.[0-9]\r\n([a-zA-Z0-9\\-]+:(\\s)+.+\r\n)*\r\n",
             std::regex_constants::ECMAScript);
 
     return std::regex_match(request_str, request_match, request_regex);
+}
+
+/**
+ *
+ *
+ */
+string get_400_response(){
+    return "HTTP/1.0 400 BAD REQUEST\r\n\r\n"; 
+}
+
+string get_404_response(){
+   return ""; 
 }
