@@ -38,6 +38,7 @@ int accept_connection(int listen_sockfd);
 bool is_valid_get_request(string request_msg);
 string get_400_response();
 string get_404_response();
+string get_path(string request_msg);
 
 /**
  * 
@@ -148,7 +149,7 @@ int accept_connection(int listen_sockfd){
  * @param accept_sockfd Represents accepted connection with client 
  */
 void handle_client(int accept_sockfd){
-    char request_buf[2048]; //
+    char request_buf[2048]; // 
     int bytes_recv;
 
     if((bytes_recv = recv(accept_sockfd, request_buf, sizeof(request_buf), 0)) < 0){
@@ -168,12 +169,13 @@ void handle_client(int accept_sockfd){
         response_msg = get_400_response();
     }
     else{
-        cout << "HTTP request IS valid" << endl;
+        //cout << "HTTP request IS valid" << endl;
         response_msg = get_400_response();
-        //get_path(request_msg);
-        //if(!fs::exists(path)){
-        //    response_msg = get_404_response();
-        //}
+        string path = get_path(request_msg);
+        cout << path << endl;
+        if(!fs::exists(path)){
+            response_msg = get_404_response();
+        }
         //else{
         //    if(is_file()){
 
@@ -232,6 +234,15 @@ bool is_valid_get_request(string request_str){
 
 /**
  *
+ */
+string get_path(string request_msg){
+    int root_index = request_msg.find("/");
+    int first_space_index = request_msg.find(" ", root_index);
+    return request_msg.substr(root_index, first_space_index-root_index);
+}
+
+/**
+ *
  *
  */
 string get_400_response(){
@@ -239,5 +250,12 @@ string get_400_response(){
 }
 
 string get_404_response(){
-   return ""; 
+    string status_line = "HTTP/1.0 404 Not Found\r\n";
+    string html_page = "<html><head><title>Oh no! Page not found</title></head>"
+       "<body><p>404 Page Not Found!!!!!</p>"
+       "<p>:^( :^( :^(</p></body></html>";
+    string header_lines = "Content-Length: " + std::to_string(html_page.length())
+        + "\r\nContent-Type: text/html\r\n\r\n";
+
+    return status_line + header_lines + html_page;
 }
