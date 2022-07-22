@@ -15,6 +15,7 @@
 #include <cstring>
 #include <stdexcept>
 #include <unistd.h>
+#include <regex>
 
 using std::cout;
 using std::endl;
@@ -23,6 +24,9 @@ static const int BACKLOG = 10;
 
 
 int get_socket_and_listen(const char *port_number);
+void handle_client(int accept_sockfd);
+int accept_connection(int listen_sockfd);
+
 
 /**
  * 
@@ -37,23 +41,20 @@ int main(int argc, char *argv[]){
         exit(1);
     }
 
-    struct sockaddr_storage their_addr;
-    socklen_t addr_size = sizeof(their_addr);
-    int accept_sockfd;
     int listen_sockfd = get_socket_and_listen(argv[1]);
-    if((accept_sockfd = accept(listen_sockfd, (struct sockaddr *)&their_addr, &addr_size)) < 0){
-        perror("Failed to accept incoming connection");
-        close(listen_sockfd);
-        exit(1);
-    }
+    int accept_sockfd = accept_connection(listen_sockfd);
     close(listen_sockfd);
     close(accept_sockfd);
+    //handle_client(accept_sockfd)
     return 0;
 
 }
 
 /**
  *
+ *
+ * @param port_number Port number where files will be served
+ * @return 
  */
 int get_socket_and_listen(const char *port_number){
     int status;
@@ -98,3 +99,45 @@ int get_socket_and_listen(const char *port_number){
     cout << "Listening at port " << port_number << endl;
     return listen_sockfd;
 }
+
+/**
+ *
+ */
+int accept_connection(int listen_sockfd){
+    struct sockaddr_storage their_addr;
+    socklen_t addr_size = sizeof(their_addr);
+    int accept_sockfd;
+
+    if((accept_sockfd = accept(listen_sockfd, (struct sockaddr *)&their_addr, &addr_size)) < 0){
+        perror("Failed to accept incoming connection");
+        close(listen_sockfd);
+        exit(1);
+    }
+    return accept_sockfd;
+}
+
+
+
+/**
+ *  @param accept_sockfd Represents accepted connection with client 
+ */
+//void handle_client(int accept_sockfd){
+//    char [2048];
+//    int bytes_recv;
+//
+//    if((bytes_recv = recv(accept_sockfd, http_request, sizeof(buffer), 0)) < 0){
+//        perror("Failed to receive data");
+//        close(accept_sockfd);
+//        exit(1);
+//    }
+//
+//
+//}
+//
+///**
+// *
+// */
+//void send_http_400_response(int accept_sockfd){
+//
+//}
+//
