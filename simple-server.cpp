@@ -19,6 +19,7 @@
 
 using std::cout;
 using std::endl;
+using std::string;
 
 static const int BACKLOG = 10;
 
@@ -43,9 +44,10 @@ int main(int argc, char *argv[]){
 
     int listen_sockfd = get_socket_and_listen(argv[1]);
     int accept_sockfd = accept_connection(listen_sockfd);
+    handle_client(accept_sockfd);
     close(listen_sockfd);
     close(accept_sockfd);
-    //handle_client(accept_sockfd)
+
     return 0;
 
 }
@@ -121,23 +123,37 @@ int accept_connection(int listen_sockfd){
 /**
  *  @param accept_sockfd Represents accepted connection with client 
  */
-//void handle_client(int accept_sockfd){
-//    char [2048];
-//    int bytes_recv;
-//
-//    if((bytes_recv = recv(accept_sockfd, http_request, sizeof(buffer), 0)) < 0){
-//        perror("Failed to receive data");
-//        close(accept_sockfd);
-//        exit(1);
-//    }
-//
-//
-//}
-//
-///**
-// *
-// */
-//void send_http_400_response(int accept_sockfd){
-//
-//}
-//
+void handle_client(int accept_sockfd){
+    char http_request_buf[2048];
+    int bytes_recv;
+
+    if((bytes_recv = recv(accept_sockfd, http_request_buf, sizeof(http_request_buf), 0)) < 0){
+        perror("Failed to receive data");
+        close(accept_sockfd);
+        exit(1);
+    }
+    
+
+
+    string http_request_str(http_request_buf, bytes_recv);
+    cout << http_request_str << endl;
+/*
+    if(is_valid_http_request(http_request_str)){
+
+    }
+    else{
+*/
+}
+
+/**
+ *
+ */
+/*
+bool is_valid_http_request(string http_request_str){
+    std::smatch request_math;
+    std::regex http_request_regex("GET(\s+)/([a-zA-Z0-9_\\-\\.]*");
+
+    return 
+}
+*/
+
