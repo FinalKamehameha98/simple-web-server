@@ -36,9 +36,9 @@ int get_socket_and_listen(const char *port_number);
 void handle_client(int accept_sockfd);
 int accept_connection(int listen_sockfd);
 bool is_valid_get_request(string request_msg);
-string get_400_response();
-string get_404_response();
 string get_path(string request_msg);
+void send_400_response(int accept_sockfd);
+void send_404_response(int accept_sockfd);
 
 /**
  * 
@@ -161,20 +161,18 @@ void handle_client(int accept_sockfd){
 
     // Convert request message frm char array to C++ string
     string request_msg(request_buf, bytes_recv);
-    //cout << request_msg << "\n";
     
     string response_msg;
     if(!is_valid_get_request(request_msg)){
-        //cout << "HTTP request NOT valid" << endl;
-        response_msg = get_400_response();
+        //response_msg = get_400_response();
+        send_400_response(accept_sockfd);
     }
     else{
-        //cout << "HTTP request IS valid" << endl;
-        response_msg = get_400_response();
+        //send_404_response(accept_sockfd);
         string path = get_path(request_msg);
-        cout << path << endl;
+        //cout << path << endl;
         if(!fs::exists(path)){
-            response_msg = get_404_response();
+            send_404_response(accept_sockfd);
         }
         //else{
         //    if(is_file()){
@@ -184,22 +182,6 @@ void handle_client(int accept_sockfd){
 
         //    }
         //}
-    }
-    
-
-    int bytes_sent = 0;
-    int msg_size = response_msg.length();
-    const char *response_msg_buf = response_msg.c_str();
-
-    while(msg_size > 0){
-        if((bytes_sent = send(accept_sockfd, response_msg_buf, msg_size, 0)) < 0){
-            perror("Failed to send message");
-            close(accept_sockfd);
-            exit(1);
-        }
-        response_msg_buf += bytes_sent;
-        msg_size -= bytes_sent;
-        
     }
 }
 
@@ -243,19 +225,34 @@ string get_path(string request_msg){
 
 /**
  *
- *
  */
-string get_400_response(){
-    return "HTTP/1.0 400 BAD REQUEST\r\n\r\n"; 
+void send_data(int accept_sockfd, const char *data, size_t data_size){
+    int bytes_sent = 0;
+
+    while(data_size > 0){
+        if((bytes_sent = send(accept_sockfd, data, data_size, 0)) < 0){
+            perror("Failed to send message");
+            close(accept_sockfd);
+            exit(1);
+        }
+        data += bytes_sent;
+        data_size -= bytes_sent;
+    }
 }
 
-string get_404_response(){
+void send_400_response(int accept_sockfd){
+    string response = "HTTP/1.0 400 BAD REQUEST\r\n\r\n";
+    send_data(accept_sockfd, response.c_str(), response.size());
+}
+
+void send_404_response(int accept_sockfd){
     string status_line = "HTTP/1.0 404 Not Found\r\n";
-    string html_page = "<html><head><title>Oh no! Page not found</title></head>"
+    string html_page = "<html><head><title>Oh no! Page not found!</title></head>"
        "<body><p>404 Page Not Found!!!!!</p>"
        "<p>:^( :^( :^(</p></body></html>";
     string header_lines = "Content-Length: " + std::to_string(html_page.length())
         + "\r\nContent-Type: text/html\r\n\r\n";
+    string response = status_line + header_lines + html_page;
+    send_data(accept_sockfd, response.c_str(), response.size());
 
-    return status_line + header_lines + html_page;
 }
