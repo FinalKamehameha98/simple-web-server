@@ -43,6 +43,9 @@ void send_404_response(int accept_sockfd);
 void send_200_response(int accept_sockfd, string path);
 void send_200_header(int accept_sockfd, string path);
 void send_200_body(int accept_sockfd, string path);
+void send_200_directory(int accept_sockfd, string path);
+string generate_file_list(string path);
+void send_data(int accept_sockfd, const char *data, size_t data_size);
 
 /**
  * 
@@ -169,14 +172,15 @@ void handle_client(int accept_sockfd){
 
     // Convert request message from char array to C++ string
     string request_msg(request_buf, bytes_recv);
-    
+    cout << request_msg << endl;
+
     string response_msg;
     if(!is_valid_get_request(request_msg)){
         send_400_response(accept_sockfd);
     }
     else{
         string path = get_path(request_msg);
-        cout << path << endl;
+        //cout << path << endl;
         if(!fs::exists(path)){
             send_404_response(accept_sockfd);
         }
@@ -185,7 +189,18 @@ void handle_client(int accept_sockfd){
                send_200_response(accept_sockfd, path); 
             }
             else{
-
+                //cout << "path.back() = " << path.back() << "\n";
+                //cout << "path.back() != '/' --> " << (path.back() != '/') << "\n";
+                if(path.back() != '/'){
+                    path += "/";
+                }
+                //cout << "path += \"/\" --> " << path << "\n";
+                if(fs::is_regular_file(path + "index.html")){
+                    send_200_response(accept_sockfd, path + "index.html");
+                }
+                else{
+                    send_200_directory(accept_sockfd, path);
+                }
             }
         }
     }
@@ -226,7 +241,8 @@ bool is_valid_get_request(string request_str){
 string get_path(string request_msg){
     int root_index = request_msg.find("/");
     int first_space_index = request_msg.find(" ", root_index);
-    return "WWW" + request_msg.substr(root_index, first_space_index-root_index);
+    int path_length = first_space_index - root_index;
+    return "WWW" + request_msg.substr(root_index, path_length);
 }
 
 /**
@@ -263,6 +279,10 @@ void send_404_response(int accept_sockfd){
 
 }
 
+/*void send_301_response(int accept_sockfd){
+    
+}
+*/
 void send_200_response(int accept_sockfd, string path){
     send_200_header(accept_sockfd, path);
     send_200_body(accept_sockfd, path);
@@ -310,9 +330,40 @@ void send_200_body(int accept_sockfd, string path){
     while(!file.eof()){
         file.read(file_data, buff_size);
         int bytes_read = file.gcount();
-        cout << "Read " << bytes_read << "bytes from file\n";
         
         send_data(accept_sockfd, file_data, bytes_read);
     }
     file.close();
+}
+
+void send_200_directory(int accept_sockfd, string path){
+    string status_line = "HTTP/1.0 200 OK\r\n";
+    string content_type = "Content-Type: text/html\r\n";
+    string html_page = generate_file_list(path);
+    string response = status_line + content_type + "Content-Length: " + std::to_string(html_page.size())
+        + "\r\n\r\n" + html_page;
+
+    cout << response << "\n";
+    send_data(accept_sockfd, response.c_str(), response.size());
+}
+
+string generate_file_list(string path){
+    string html_page = "<html><head><title>File Listing</title></head><body><ul>";
+    
+    for(auto& entry: fs::directory_iterator(path)){
+        string filename = entry.path().filename();
+
+        cout << "entry.path() = " << entry.path() << "\n";
+        cout << filename << " directory ? " << entry.is_directory() << "\n";
+        cout << "entry.path().filename() = " << entry.path().filename() << "\n";
+        if(entry.is_directory()){
+            html_page += "<li style=\"list-style: ':^) '\"><a href=\"" + filename  +"/\">" + filename + "/</a></li>";
+        }
+        else{
+            html_page += "<li style=\"list-style: ':^) '\"><a href=\"" + filename  + "\">" + filename + "</a></li>";
+        }
+    }
+    html_page += "</ul></body></html>";
+    
+    return html_page;
 }
