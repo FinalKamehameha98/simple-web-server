@@ -31,3 +31,6 @@
 *.out
 *.app
 simple-server
+
+# Directories
+tmp/
