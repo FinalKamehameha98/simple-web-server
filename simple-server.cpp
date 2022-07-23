@@ -19,6 +19,7 @@
 #include <unistd.h>
 #include <regex>
 #include <filesystem>
+#include <fstream>
 
 namespace fs = std::filesystem;
 
@@ -39,13 +40,17 @@ bool is_valid_get_request(string request_msg);
 string get_path(string request_msg);
 void send_400_response(int accept_sockfd);
 void send_404_response(int accept_sockfd);
+void send_200_response(int accept_sockfd, string path);
+void send_200_header(int accept_sockfd, string path);
+void send_200_body(int accept_sockfd, string path);
 
 /**
  * 
  *
  *
- * @param argc Number of arguments on command line
- * @param argv Array of arguments from command line
+ * @param argc Number of arguments on command line (should be exactly two)
+ * @param argv Command line arguments, specifically port number and directory
+ * of where 
  */
 int main(int argc, char *argv[]){
     if(argc != 3){
@@ -54,11 +59,13 @@ int main(int argc, char *argv[]){
     }
 
     int listen_sockfd = get_socket_and_listen(argv[1]);
-    int accept_sockfd = accept_connection(listen_sockfd);
-    handle_client(accept_sockfd);
-    close(listen_sockfd);
-    close(accept_sockfd);
-
+    
+    while(true){
+        int accept_sockfd = accept_connection(listen_sockfd);
+        handle_client(accept_sockfd);
+    //close(listen_sockfd);
+        close(accept_sockfd);
+    }
     return 0;
 
 }
@@ -94,9 +101,10 @@ int get_socket_and_listen(const char *port_number){
     }
     
     // Set listening socket to reuse same IP address
-    int reuse_yes = 1;
-    if((status = setsockopt(listen_sockfd, SOL_SOCKET, SO_REUSEADDR, &reuse_yes, sizeof(reuse_yes))) < 0){
+    int enable_reuse = 1;
+    if((status = setsockopt(listen_sockfd, SOL_SOCKET, SO_REUSEADDR, &enable_reuse, sizeof(enable_reuse))) < 0){
         perror("Failed to set socket options");
+        freeaddrinfo(result);
         exit(1);
     }
     
@@ -149,7 +157,7 @@ int accept_connection(int listen_sockfd){
  * @param accept_sockfd Represents accepted connection with client 
  */
 void handle_client(int accept_sockfd){
-    char request_buf[2048]; // 
+    char request_buf[2048]; // 2 KB buffer 
     int bytes_recv;
 
     if((bytes_recv = recv(accept_sockfd, request_buf, sizeof(request_buf), 0)) < 0){
@@ -159,29 +167,27 @@ void handle_client(int accept_sockfd){
     }
     
 
-    // Convert request message frm char array to C++ string
+    // Convert request message from char array to C++ string
     string request_msg(request_buf, bytes_recv);
     
     string response_msg;
     if(!is_valid_get_request(request_msg)){
-        //response_msg = get_400_response();
         send_400_response(accept_sockfd);
     }
     else{
-        //send_404_response(accept_sockfd);
         string path = get_path(request_msg);
-        //cout << path << endl;
+        cout << path << endl;
         if(!fs::exists(path)){
             send_404_response(accept_sockfd);
         }
-        //else{
-        //    if(is_file()){
+        else{
+            if(fs::is_regular_file(path)){
+               send_200_response(accept_sockfd, path); 
+            }
+            else{
 
-        //    }
-        //    else{
-
-        //    }
-        //}
+            }
+        }
     }
 }
 
@@ -220,7 +226,7 @@ bool is_valid_get_request(string request_str){
 string get_path(string request_msg){
     int root_index = request_msg.find("/");
     int first_space_index = request_msg.find(" ", root_index);
-    return request_msg.substr(root_index, first_space_index-root_index);
+    return "WWW" + request_msg.substr(root_index, first_space_index-root_index);
 }
 
 /**
@@ -255,4 +261,58 @@ void send_404_response(int accept_sockfd){
     string response = status_line + header_lines + html_page;
     send_data(accept_sockfd, response.c_str(), response.size());
 
+}
+
+void send_200_response(int accept_sockfd, string path){
+    send_200_header(accept_sockfd, path);
+    send_200_body(accept_sockfd, path);
+}
+
+void send_200_header(int accept_sockfd, string path){
+    string status_line = "HTTP/1.0 200 OK\r\n";
+    string content_length = "Content-Length: " + std::to_string(fs::file_size(path)) + "\r\n";
+    
+    string file_extension = path.substr(path.find("."));
+    string content_type = "";
+    
+    if(file_extension == ".txt"){
+        content_type = "text/plain";
+    }
+    else if(file_extension == ".pdf"){
+        content_type = "application/pdf";
+    }
+    else if(file_extension == ".html"){
+        content_type = "text/html";
+    }
+    else if(file_extension == ".css"){
+        content_type = "text/css";
+    }
+    else if(file_extension == ".jpeg" || file_extension == ".jpg" || file_extension == ".jpe" 
+            || file_extension == ".jfif" || file_extension == ".jif"){
+        content_type = "image/jpeg";
+    }
+    else if(file_extension == ".png" || file_extension == ".PNG"){
+        content_type = "image/png";
+    }
+    else if(file_extension == ".gif"){
+        content_type = "image/gif";
+    }
+    content_type += "\r\n\r\n";
+    string response = status_line + content_length + content_type;
+    send_data(accept_sockfd, response.c_str(), response.size());
+}
+
+void send_200_body(int accept_sockfd, string path){
+    std::ifstream file(path, std::ios::binary);
+    const unsigned int buff_size = 4096; // 4 KB buffer
+    char file_data[buff_size];
+
+    while(!file.eof()){
+        file.read(file_data, buff_size);
+        int bytes_read = file.gcount();
+        cout << "Read " << bytes_read << "bytes from file\n";
+        
+        send_data(accept_sockfd, file_data, bytes_read);
+    }
+    file.close();
 }
