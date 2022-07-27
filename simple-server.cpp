@@ -21,6 +21,7 @@
 #include <filesystem>
 #include <fstream>
 
+// Declared namespaces
 namespace fs = std::filesystem;
 
 // using declarations
@@ -30,7 +31,6 @@ using std::string;
 
 // Constants
 static const int BACKLOG = 10;
-
 
 // Forward declarations
 int get_socket_and_listen(const char *port_number);
@@ -47,6 +47,7 @@ void send_200_directory(int accept_sockfd, string path);
 string generate_file_list(string path);
 void send_data(int accept_sockfd, const char *data, size_t data_size);
 void send_301_response(int accept_sockfd, string path);
+
 /**
  * 
  *
