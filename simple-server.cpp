@@ -20,6 +20,8 @@
 #include <regex>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
+#include <thread>
 
 // Declared namespaces
 namespace fs = std::filesystem;
@@ -31,11 +33,12 @@ using std::string;
 
 // Constants
 static const int BACKLOG = 10;
+static const int THREAD_COUNT = 8;
 
 // Forward declarations
 int get_socket_and_listen(const char *port_number);
 void handle_client(int accept_sockfd);
-int accept_connection(int listen_sockfd);
+int accept_connections(int listen_sockfd);
 bool is_valid_get_request(string request_msg);
 string get_path(string request_msg);
 void send_400_response(int accept_sockfd);
@@ -47,6 +50,7 @@ void send_200_directory(int accept_sockfd, string path);
 string generate_file_list(string path);
 void send_data(int accept_sockfd, const char *data, size_t data_size);
 void send_301_response(int accept_sockfd, string path);
+void run_server(int accept_sockfd);
 
 /**
  * 
@@ -64,12 +68,10 @@ int main(int argc, char *argv[]){
 
     int listen_sockfd = get_socket_and_listen(argv[1]);
     
-    while(true){
-        int accept_sockfd = accept_connection(listen_sockfd);
-        handle_client(accept_sockfd);
-    //close(listen_sockfd);
-        close(accept_sockfd);
-    }
+    accept_connections(listen_sockfd);
+
+    close(listen_sockfd);
+
     return 0;
 
 }
@@ -135,15 +137,20 @@ int get_socket_and_listen(const char *port_number){
  * @param listen_sockfd Listening socket to wait on 
  * @return Socket of the accepted connection between
  */
-int accept_connection(int listen_sockfd){
-    struct sockaddr_storage their_addr; 
-    socklen_t addr_size = sizeof(their_addr);
-    int accept_sockfd;
+int accept_connections(int listen_sockfd){
+    
+    while(true){
+        struct sockaddr_storage their_addr; 
+        socklen_t addr_size = sizeof(their_addr);
+        int accept_sockfd;
 
-    if((accept_sockfd = accept(listen_sockfd, (struct sockaddr *)&their_addr, &addr_size)) < 0){
-        perror("Failed to accept incoming connection");
-        close(listen_sockfd);
-        exit(1);
+        if((accept_sockfd = accept(listen_sockfd, (struct sockaddr *)&their_addr, &addr_size)) < 0){
+            perror("Failed to accept incoming connection");
+            close(listen_sockfd);
+            exit(1);
+        }
+
+        close(accept_sockfd);
     }
     return accept_sockfd;
 }
@@ -366,4 +373,10 @@ string generate_file_list(string path){
     html_page += "</ul></body></html>";
     
     return html_page;
+}
+
+void run_server(int accept_sockfd){
+    while(true){
+       handle_client(accept_sockfd); 
+    }
 }
