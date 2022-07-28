@@ -5,7 +5,7 @@ TARGETS=simple-server
 
 all: $(TARGETS)
 
-simple-server:	simple-server.cpp
+simple-server:	simple-server.cpp bounded_buffer.cpp
 	$(CPP) $^ -o $@ $(CPPFLAGS)
 
 clean:

@@ -20,8 +20,9 @@
 #include <regex>
 #include <filesystem>
 #include <fstream>
-#include <mutex>
 #include <thread>
+
+#include "bounded_buffer.hpp"
 
 // Declared namespaces
 namespace fs = std::filesystem;
@@ -33,12 +34,13 @@ using std::string;
 
 // Constants
 static const int BACKLOG = 10;
-static const int THREAD_COUNT = 8;
+static const int NUMBER_OF_WORKERS = 8;
+static const int BUFFER_SIZE = 16;
 
 // Forward declarations
 int get_socket_and_listen(const char *port_number);
 void handle_client(int accept_sockfd);
-int accept_connections(int listen_sockfd);
+void accept_connections(int listen_sockfd);
 bool is_valid_get_request(string request_msg);
 string get_path(string request_msg);
 void send_400_response(int accept_sockfd);
@@ -50,7 +52,7 @@ void send_200_directory(int accept_sockfd, string path);
 string generate_file_list(string path);
 void send_data(int accept_sockfd, const char *data, size_t data_size);
 void send_301_response(int accept_sockfd, string path);
-void run_server(int accept_sockfd);
+void handle_connection(bounded_buffer &buffer);
 
 /**
  * 
@@ -135,10 +137,15 @@ int get_socket_and_listen(const char *port_number){
  *
  *
  * @param listen_sockfd Listening socket to wait on 
- * @return Socket of the accepted connection between
  */
-int accept_connections(int listen_sockfd){
-    
+void accept_connections(int listen_sockfd){
+    bounded_buffer connection_buff(BUFFER_SIZE);
+
+    for(size_t i = 0; i < NUMBER_OF_WORKERS; i++){
+        std::thread worker(handle_connection, std::ref(connection_buff));
+        worker.detach();
+    }
+
     while(true){
         struct sockaddr_storage their_addr; 
         socklen_t addr_size = sizeof(their_addr);
@@ -150,9 +157,8 @@ int accept_connections(int listen_sockfd){
             exit(1);
         }
 
-        close(accept_sockfd);
+        connection_buff.put_item(accept_sockfd);
     }
-    return accept_sockfd;
 }
 
 
@@ -180,7 +186,7 @@ void handle_client(int accept_sockfd){
 
     // Convert request message from char array to C++ string
     string request_msg(request_buf, bytes_recv);
-    cout << "Request\n" << request_msg << "\n";
+    //cout << "Request\n" << request_msg << "\n";
 
     string response_msg;
     if(!is_valid_get_request(request_msg)){
@@ -211,6 +217,8 @@ void handle_client(int accept_sockfd){
             }
         }
     }
+
+    close(accept_sockfd);
 }
 
 /**
@@ -375,8 +383,8 @@ string generate_file_list(string path){
     return html_page;
 }
 
-void run_server(int accept_sockfd){
+void handle_connection(bounded_buffer &buffer){
     while(true){
-       handle_client(accept_sockfd); 
+       handle_client(buffer.get_item()); 
     }
 }
