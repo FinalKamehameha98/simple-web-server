@@ -8,6 +8,8 @@ all: $(TARGETS)
 simple-server:	simple-server.cpp bounded_buffer.cpp
 	$(CPP) $^ -o $@ $(CPPFLAGS)
 
+
+.PHONY: clean
 clean:
 	rm -f $(TARGETS)	
 
