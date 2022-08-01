@@ -35,23 +35,24 @@ using std::string;
 // Constants
 static const int BACKLOG = 10;
 static const int NUMBER_OF_WORKERS = 8;
-static const int BUFFER_SIZE = 16;
+static const int BOUNDED_BUFF_SIZE = 16;
+static const int RECV_BUFF_SIZE = 2048; // 2 KB buffer
 
 // Forward declarations
-int get_socket_and_listen(const char *port_number);
-void handle_client(int accept_sockfd);
-void accept_connections(int listen_sockfd);
+int get_server_socket(const char *port_number);
+void handle_client(int client_socket);
+void accept_connections(int server_sockfd);
 bool is_valid_get_request(string request_msg);
 string get_path(string request_msg);
-void send_400_response(int accept_sockfd);
-void send_404_response(int accept_sockfd);
-void send_200_response(int accept_sockfd, string path);
-void send_200_header(int accept_sockfd, string path);
-void send_200_body(int accept_sockfd, string path);
-void send_200_directory(int accept_sockfd, string path);
+void send_400_response(int client_socket);
+void send_404_response(int client_socket);
+void send_200_response(int client_socket, string path);
+void send_200_header(int client_socket, string path);
+void send_200_body(int client_socket, string path);
+void send_200_directory(int client_socket, string path);
 string generate_file_list(string path);
-void send_data(int accept_sockfd, const char *data, size_t data_size);
-void send_301_response(int accept_sockfd, string path);
+void send_data(int client_socket, const char *data, size_t data_size);
+void send_301_response(int client_socket, string path);
 void handle_connection(bounded_buffer &buffer);
 
 /**
@@ -68,11 +69,9 @@ int main(int argc, char *argv[]){
         exit(1);
     }
 
-    int listen_sockfd = get_socket_and_listen(argv[1]);
-    
-    accept_connections(listen_sockfd);
-
-    close(listen_sockfd);
+    int server_sockfd = get_server_socket(argv[1]); 
+    accept_connections(server_sockfd);
+    close(server_sockfd);
 
     return 0;
 
@@ -85,11 +84,11 @@ int main(int argc, char *argv[]){
  *
  * @return Socket file descriptor listening for incoming connections
  */
-int get_socket_and_listen(const char *port_number){
+int get_server_socket(const char *port_number){
     int status;
     struct addrinfo hints;
     struct addrinfo *result;
-    int listen_sockfd;
+    int server_sockfd;
 
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_UNSPEC; // IPv4 or IPv6
@@ -102,7 +101,7 @@ int get_socket_and_listen(const char *port_number){
         exit(1);   
     }
     
-    if((listen_sockfd = socket(result->ai_family, result->ai_socktype, result->ai_protocol)) < 0){
+    if((server_sockfd = socket(result->ai_family, result->ai_socktype, result->ai_protocol)) < 0){
         perror("Failed to create listening socket");
         freeaddrinfo(result);
         exit(1);
@@ -110,36 +109,36 @@ int get_socket_and_listen(const char *port_number){
     
     // Set listening socket to reuse same IP address
     int enable_reuse = 1;
-    if((status = setsockopt(listen_sockfd, SOL_SOCKET, SO_REUSEADDR, &enable_reuse, sizeof(enable_reuse))) < 0){
+    if((status = setsockopt(server_sockfd, SOL_SOCKET, SO_REUSEADDR, &enable_reuse, sizeof(enable_reuse))) < 0){
         perror("Failed to set socket options");
         freeaddrinfo(result);
         exit(1);
     }
     
-    if((status = bind(listen_sockfd, result->ai_addr, result->ai_addrlen)) < 0){
+    if((status = bind(server_sockfd, result->ai_addr, result->ai_addrlen)) < 0){
         perror("Failed to bind socket to IP address");
         freeaddrinfo(result);
         exit(1);
     }
 
     freeaddrinfo(result);
-    if((status = listen(listen_sockfd, BACKLOG)) < 0){
+    if((status = listen(server_sockfd, BACKLOG)) < 0){
         perror("Failed to listen to incoming connections");
         exit(1);
     }
     
     cout << "Listening at port " << port_number << endl;
-    return listen_sockfd;
+    return server_sockfd;
 }
 
 /**
  * Waits and listens until first incoming connection is accepted.
  *
  *
- * @param listen_sockfd Listening socket to wait on 
+ * @param server_sockfd Listening socket to wait on 
  */
-void accept_connections(int listen_sockfd){
-    bounded_buffer connection_buff(BUFFER_SIZE);
+void accept_connections(int server_sockfd){
+    bounded_buffer connection_buff(BOUNDED_BUFF_SIZE);
 
     for(size_t i = 0; i < NUMBER_OF_WORKERS; i++){
         std::thread worker(handle_connection, std::ref(connection_buff));
@@ -149,15 +148,15 @@ void accept_connections(int listen_sockfd){
     while(true){
         struct sockaddr_storage their_addr; 
         socklen_t addr_size = sizeof(their_addr);
-        int accept_sockfd;
+        int client_socket;
 
-        if((accept_sockfd = accept(listen_sockfd, (struct sockaddr *)&their_addr, &addr_size)) < 0){
+        if((client_socket = accept(server_sockfd, (struct sockaddr *)&their_addr, &addr_size)) < 0){
             perror("Failed to accept incoming connection");
-            close(listen_sockfd);
+            close(server_sockfd);
             exit(1);
         }
 
-        connection_buff.put_item(accept_sockfd);
+        connection_buff.put_item(client_socket);
     }
 }
 
@@ -171,54 +170,48 @@ void accept_connections(int listen_sockfd){
  * File Not Found --------> 404 Response
  * File Found ------------> 200 Response
  *  
- * @param accept_sockfd Represents accepted connection with client 
+ * @param client_socket Represents accepted connection with client 
  */
-void handle_client(int accept_sockfd){
-    char request_buf[2048]; // 2 KB buffer 
+void handle_client(int client_socket){
+    char request_buf[RECV_BUFF_SIZE]; 
     int bytes_recv;
 
-    if((bytes_recv = recv(accept_sockfd, request_buf, sizeof(request_buf), 0)) < 0){
+    if((bytes_recv = recv(client_socket, request_buf, sizeof(request_buf), 0)) < 0){
         perror("Failed to receive data");
-        close(accept_sockfd);
+        close(client_socket);
         exit(1);
     }
-    
 
     // Convert request message from char array to C++ string
     string request_msg(request_buf, bytes_recv);
-    //cout << "Request\n" << request_msg << "\n";
 
-    string response_msg;
     if(!is_valid_get_request(request_msg)){
-        send_400_response(accept_sockfd);
+        send_400_response(client_socket);
     }
     else{
+        // TODO: Use command line argument to get root directory
         string path = "WWW" + get_path(request_msg);
         if(!fs::exists(path)){
-            send_404_response(accept_sockfd);
+            send_404_response(client_socket);
+        }
+        else if(fs::is_regular_file(path)){
+           send_200_response(client_socket, path); 
         }
         else{
-            if(fs::is_regular_file(path)){
-               send_200_response(accept_sockfd, path); 
+            if(path.back() != '/'){
+                path = path.substr(path.find("/")) + "/";
+                send_301_response(client_socket, path);
+            }
+            else if(fs::is_regular_file(path + "index.html")){
+                send_200_response(client_socket, path + "index.html");
             }
             else{
-                if(path.back() != '/'){
-                    path = path.substr(path.find("/")) + "/";
-                    send_301_response(accept_sockfd, path);
-                }
-                else{
-                    if(fs::is_regular_file(path + "index.html")){
-                        send_200_response(accept_sockfd, path + "index.html");
-                    }
-                    else{
-                        send_200_directory(accept_sockfd, path);
-                    }
-                }
+                send_200_directory(client_socket, path);
             }
         }
     }
 
-    close(accept_sockfd);
+    close(client_socket);
 }
 
 /**
@@ -244,7 +237,7 @@ void handle_client(int accept_sockfd){
  */
 bool is_valid_get_request(string request_str){
     std::smatch request_match;
-    std::regex request_regex("GET\\s+/([a-zA-Z0-9_\\-\\.]+/?)*\\s+HTTP/[0-9]\\.[0-9]\r\n([a-zA-Z0-9\\-]+:(\\s)+.+\r\n)*\r\n",
+    std::regex request_regex("GET\\s+/([a-zA-Z0-9_\\-\\.]*/?)*\\s+HTTP/[0-9]\\.[0-9]\r\n([a-zA-Z0-9\\-]+:(\\s)+.+\r\n)*\r\n",
             std::regex_constants::ECMAScript);
 
     return std::regex_match(request_str, request_match, request_regex);
@@ -263,13 +256,13 @@ string get_path(string request_msg){
 /**
  *
  */
-void send_data(int accept_sockfd, const char *data, size_t data_size){
+void send_data(int client_socket, const char *data, size_t data_size){
     int bytes_sent = 0;
 
     while(data_size > 0){
-        if((bytes_sent = send(accept_sockfd, data, data_size, 0)) < 0){
+        if((bytes_sent = send(client_socket, data, data_size, 0)) < 0){
             perror("Failed to send message");
-            close(accept_sockfd);
+            close(client_socket);
             exit(1);
         }
         data += bytes_sent;
@@ -277,12 +270,12 @@ void send_data(int accept_sockfd, const char *data, size_t data_size){
     }
 }
 
-void send_400_response(int accept_sockfd){
+void send_400_response(int client_socket){
     string response = "HTTP/1.0 400 BAD REQUEST\r\n\r\n";
-    send_data(accept_sockfd, response.c_str(), response.size());
+    send_data(client_socket, response.c_str(), response.size());
 }
 
-void send_404_response(int accept_sockfd){
+void send_404_response(int client_socket){
     string status_line = "HTTP/1.0 404 Not Found\r\n";
     string html_page = "<html><head><title>Oh no! Page not found!</title></head>"
        "<body><p>404 Page Not Found!!!!!</p>"
@@ -290,24 +283,24 @@ void send_404_response(int accept_sockfd){
     string header_lines = "Content-Length: " + std::to_string(html_page.length())
         + "\r\nContent-Type: text/html\r\n\r\n";
     string response = status_line + header_lines + html_page;
-    send_data(accept_sockfd, response.c_str(), response.size());
+    send_data(client_socket, response.c_str(), response.size());
 
 }
 
-void send_301_response(int accept_sockfd, string path){
+void send_301_response(int client_socket, string path){
     string status_line = "HTTP/1.0 301 Moved Permanently\r\n";
     string location = "Location: " + path + "\r\n\r\n";
     string response = status_line + location;
 
-    send_data(accept_sockfd, response.c_str(), response.size());
+    send_data(client_socket, response.c_str(), response.size());
 }
 
-void send_200_response(int accept_sockfd, string path){
-    send_200_header(accept_sockfd, path);
-    send_200_body(accept_sockfd, path);
+void send_200_response(int client_socket, string path){
+    send_200_header(client_socket, path);
+    send_200_body(client_socket, path);
 }
 
-void send_200_header(int accept_sockfd, string path){
+void send_200_header(int client_socket, string path){
     string status_line = "HTTP/1.0 200 OK\r\n";
     string content_length = "Content-Length: " + std::to_string(fs::file_size(path)) + "\r\n";
     
@@ -338,10 +331,10 @@ void send_200_header(int accept_sockfd, string path){
     }
     content_type += "\r\n\r\n";
     string response = status_line + content_length + content_type;
-    send_data(accept_sockfd, response.c_str(), response.size());
+    send_data(client_socket, response.c_str(), response.size());
 }
 
-void send_200_body(int accept_sockfd, string path){
+void send_200_body(int client_socket, string path){
     std::ifstream file(path, std::ios::binary);
     const unsigned int buff_size = 4096; // 4 KB buffer
     char file_data[buff_size];
@@ -350,19 +343,19 @@ void send_200_body(int accept_sockfd, string path){
         file.read(file_data, buff_size);
         int bytes_read = file.gcount();
         
-        send_data(accept_sockfd, file_data, bytes_read);
+        send_data(client_socket, file_data, bytes_read);
     }
     file.close();
 }
 
-void send_200_directory(int accept_sockfd, string path){
+void send_200_directory(int client_socket, string path){
     string status_line = "HTTP/1.0 200 OK\r\n";
     string content_type = "Content-Type: text/html\r\n";
     string html_page = generate_file_list(path);
     string response = status_line + content_type + "Content-Length: " + std::to_string(html_page.size())
         + "\r\n\r\n" + html_page;
 
-    send_data(accept_sockfd, response.c_str(), response.size());
+    send_data(client_socket, response.c_str(), response.size());
 }
 
 string generate_file_list(string path){
